@@ -8,7 +8,8 @@ import { downloadBackup } from '../export.js';
 import { seedDemo } from '../seed.js';
 import { AI_MODEL } from '../ai.js';
 
-export const APP_VERSION = '1.1.1';
+// filled in by deploy.ps1 (date + fingerprint of the app files)
+export const APP_VERSION = '2026.10.24-1915d956';
 
 export function render({ el, refresh }) {
   setHeader({ title: 'Ustawienia' });
@@ -69,7 +70,17 @@ export function render({ el, refresh }) {
   <section class="about">
     <span class="about-logo">${LOGO}</span>
     <p><strong>Jacob Light – Event Calendar</strong><br><span class="small muted">wersja ${APP_VERSION} · ${state.events.length} wydarzeń w pamięci</span></p>
+    <p class="small muted">Aktualizacje instalują się same, gdy otworzysz aplikację.</p>
+    <button class="btn" id="check-update">${icon('refresh')}Sprawdź aktualizację teraz</button>
   </section>`;
+
+  el.querySelector('#check-update').onclick = async () => {
+    if (!window.checkForUpdate) { toast('Aktualizacje działają tylko w zainstalowanej wersji (https)'); return; }
+    toast('Sprawdzam…');
+    await window.checkForUpdate();
+    // a new version reloads the app by itself; if nothing happened we are up to date
+    setTimeout(() => toast('Masz najnowszą wersję'), 3000);
+  };
 
   const keyInput = el.querySelector('#api-key');
   storageInfo(el);

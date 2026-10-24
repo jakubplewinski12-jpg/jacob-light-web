@@ -105,14 +105,10 @@ async function boot() {
   window.addEventListener('hashchange', () => route());
   await route();
 
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    const hadController = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW:', err));
-    // the shell is cache-first: a new version takes effect after a restart, say so
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (hadController) toast('Pobrano nową wersję aplikacji – zamknij ją i otwórz ponownie.');
-    });
-  }
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') setupUpdates();
+  try {
+    if (sessionStorage.getItem('updated')) { sessionStorage.removeItem('updated'); toast(`Zaktualizowano do wersji ${settings.APP_VERSION}`); }
+  } catch { /* storage blocked */ }
 
   // Safari may evict script-written data of sites not used for a while (ITP, 7 days of
   // use); a Home Screen app gets its own counter and persist() is granted heuristically
@@ -121,6 +117,50 @@ async function boot() {
   if (standalone && navigator.storage?.persist) {
     navigator.storage.persisted().then(p => (p ? true : navigator.storage.persist())).catch(() => {});
   }
+}
+
+/* ---------- updates without reinstalling ----------
+   Every deploy changes sw.js (its CACHE name is derived from the app files), the browser
+   installs the new worker in the background, it takes over (skipWaiting + claim) and we
+   reload into the new version. All data lives in IndexedDB, so a reload loses nothing –
+   except a form being typed, so then we wait until the user leaves it. */
+
+const busy = () => document.body.classList.contains('sheet-open') || /^#\/(new|import|event\/[^/]+\/edit)/.test(location.hash);
+
+function setupUpdates() {
+  const sw = navigator.serviceWorker;
+  // the very first install takes control without replacing anything – skip only that one
+  let skipNext = !sw.controller;
+  let pending = false;
+
+  const reloadNow = () => {
+    try { sessionStorage.setItem('updated', '1'); } catch { /* ignore */ }
+    location.reload();
+  };
+  const reloadWhenIdle = () => {
+    if (!busy()) return reloadNow();
+    if (pending) return;
+    pending = true;
+    toast('Pobrano nową wersję – zainstaluje się po zapisaniu formularza.');
+    const tryLater = () => { if (!busy()) reloadNow(); };
+    window.addEventListener('hashchange', tryLater);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) reloadNow(); });
+    new MutationObserver(tryLater).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  };
+  sw.addEventListener('controllerchange', () => {
+    if (skipNext) { skipNext = false; return; }
+    reloadWhenIdle();
+  });
+
+  // updateViaCache 'none': always fetch sw.js from the network, not the 10-minute HTTP cache
+  sw.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+    const check = () => reg.update().catch(() => {});
+    // iOS keeps a Home Screen app suspended instead of reloading it, so check whenever it
+    // comes back to the screen, and every 30 minutes while it stays open
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    setInterval(check, 30 * 60 * 1000);
+    window.checkForUpdate = check;
+  }).catch(err => console.warn('SW:', err));
 }
 
 boot();

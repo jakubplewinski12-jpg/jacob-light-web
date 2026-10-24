@@ -1,6 +1,7 @@
 // Service worker: offline app shell + pdf.js from CDN.
-// Bump CACHE when shipping changes so phones pick up the new version.
-const CACHE = 'eventcal-v1.2.0';
+// deploy.ps1 replaces this name with one derived from the app files, so every published
+// change produces a new sw.js and phones update by themselves. Locally it stays 'dev'.
+const CACHE = 'eventcal-1915d956';
 
 const SHELL = [
   './',
