@@ -167,7 +167,7 @@ export function render({ el, params, query }) {
       if (act === 'share') return shareResult(await shareEvent(ev));
       if (act === 'trip-pdf') return openTripSheetDialog(ev);
       if (act === 'gcal') {
-        try { toast('Łączę z Google…'); const n = await syncToGoogle(ev); toast(`Zsynchronizowano z Google Kalendarzem (${n})`); }
+        try { toast('Przechodzę do Google…'); await syncToGoogle(ev); }
         catch (e) { toast(e.message, 'err'); }
         return;
       }

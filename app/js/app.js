@@ -1,5 +1,6 @@
 // Bootstrap + hash router.
 
+import { handleGoogleReturn } from './gcal.js';
 import { loadAll, getSettings, setSetting, state } from './store.js';
 import { seedDemo } from './seed.js';
 import { initUi, setHeader, toast } from './ui.js';
@@ -92,6 +93,9 @@ function refresh() {
 
 async function boot() {
   initUi();
+  // back from Google's consent page: push to the calendar before routing (the hash holds the token)
+  const g = await handleGoogleReturn();
+  if (g) setTimeout(() => toast(g.msg, g.ok ? '' : 'err'), 800);
   try {
     await loadAll();
     if (!getSettings().seeded) {

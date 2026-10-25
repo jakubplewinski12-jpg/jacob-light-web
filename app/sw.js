@@ -1,7 +1,7 @@
 // Service worker: offline app shell + PDF libraries (pdf.js, pdf-lib, fontkit) from CDN.
 // deploy.ps1 replaces this name with one derived from the app files, so every published
 // change produces a new sw.js and phones update by themselves. Locally it stays 'dev'.
-const CACHE = 'eventcal-551edea2';
+const CACHE = 'eventcal-eed5932d';
 
 const SHELL = [
   './',

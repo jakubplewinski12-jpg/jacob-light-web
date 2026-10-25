@@ -1,46 +1,20 @@
 // Google Calendar sync: pushes an event's milestones (wyjazd, montaż, show, demontaż,
 // powrót, calls…) to the user's primary Google Calendar. Re-syncing updates the same
 // entries (stable ids), so changes in the app reach the calendar without duplicates.
+//
+// Redirect flow, not a popup: in an iPhone Home Screen app the Google popup cannot return
+// to the app (white screen). The entries travel in OAuth `state`, so the page Google
+// returns to can push them even when iOS opens it outside the app's own storage.
 
 import { milestones } from './store.js';
 import { addMinutesDT } from './util.js';
 
-// public OAuth client id (project "Event Cal", authorised origin: the GitHub Pages site)
+// public OAuth client id (project "Event Cal"); redirect URI = the app's URL below
 const CLIENT_ID = '991935838270-8m5mv9klhvond8pv8aaetjgtrd3091kg.apps.googleusercontent.com';
+const REDIRECT = 'https://jakubplewinski12-jpg.github.io/jacob-light-web/app/';
 const SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 const API = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
 const TZ = 'Europe/Warsaw';
-
-let token = null, tokenExp = 0, gsiLoading = null;
-
-function loadGsi() {
-  if (window.google?.accounts?.oauth2) return Promise.resolve();
-  return gsiLoading ||= new Promise((ok, fail) => {
-    const s = document.createElement('script');
-    s.src = 'https://accounts.google.com/gsi/client';
-    s.onload = ok;
-    s.onerror = () => { gsiLoading = null; fail(new Error('Brak połączenia z Google')); };
-    document.head.appendChild(s);
-  });
-}
-
-async function getToken() {
-  if (token && Date.now() < tokenExp - 60000) return token;
-  await loadGsi();
-  return new Promise((ok, fail) => {
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: SCOPE,
-      callback: r => {
-        if (r.error) return fail(new Error('Google odmówił dostępu: ' + r.error));
-        token = r.access_token; tokenExp = Date.now() + r.expires_in * 1000;
-        ok(token);
-      },
-      error_callback: e => fail(new Error(e.type === 'popup_closed' ? 'Zamknięto okno logowania Google' : 'Logowanie Google nie powiodło się'))
-    });
-    client.requestAccessToken();
-  });
-}
 
 // Google event ids: 5–1024 chars of base32hex (0-9a-v); a hex hash fits
 async function gid(...parts) {
@@ -48,44 +22,60 @@ async function gid(...parts) {
   return 'jl' + [...new Uint8Array(buf)].slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function entries(ev) {
+async function entries(ev) {
   const place = [ev.venue, ev.address].filter(Boolean).join(', ');
   const ms = milestones(ev);
-  const out = [];
   const show = ms.find(m => m.kind === 'show'), showEnd = ms.find(m => m.kind === 'showend');
+  const out = [];
   for (const m of ms) {
     if (m.kind === 'showend' && show) continue; // folded into the show block
     const end = m.kind === 'show' && showEnd ? showEnd.dt : addMinutesDT(m.dt, m.kind === 'show' ? 120 : 30);
-    out.push({ key: m.key, summary: `${m.label} · ${ev.name}`, start: m.dt, end, location: place });
+    out.push({ i: await gid(ev.id, m.key), s: `${m.label} · ${ev.name}`, a: m.dt, b: end, l: place });
   }
   return out;
 }
 
-async function call(method, url, body) {
-  const res = await fetch(url, {
-    method,
-    headers: { Authorization: `Bearer ${await getToken()}`, 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined
+const b64 = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64 = s => decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/'))));
+
+/** Leaves the app for Google's consent page; the sync finishes in handleGoogleReturn(). */
+export async function syncToGoogle(ev) {
+  const list = await entries(ev);
+  if (!list.length) throw new Error('Brak godzin do wysłania – uzupełnij harmonogram');
+  const state = b64(JSON.stringify({ ev: ev.id, back: location.hash, e: list }));
+  const q = new URLSearchParams({
+    client_id: CLIENT_ID, redirect_uri: REDIRECT, response_type: 'token',
+    scope: SCOPE, include_granted_scopes: 'true', state
   });
-  if (res.status === 401) { token = null; throw new Error('Sesja Google wygasła – spróbuj ponownie'); }
-  return res;
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + q;
 }
 
-/** Creates or updates the event's entries in Google Calendar. Returns the number synced. */
-export async function syncToGoogle(ev) {
-  await getToken();
-  const list = entries(ev);
+async function push(token, list) {
   for (const e of list) {
-    const id = await gid(ev.id, e.key);
     const body = {
-      id, summary: e.summary, location: e.location,
-      description: 'Z aplikacji Event Cal – Jacob Light',
-      start: { dateTime: e.start + ':00', timeZone: TZ },
-      end: { dateTime: e.end + ':00', timeZone: TZ }
+      id: e.i, summary: e.s, location: e.l, description: 'Z aplikacji Event Cal – Jacob Light',
+      start: { dateTime: e.a + ':00', timeZone: TZ }, end: { dateTime: e.b + ':00', timeZone: TZ }
     };
-    let res = await call('PUT', `${API}/${id}`, body);
-    if (res.status === 404) res = await call('POST', API, body);
+    const opts = m => ({ method: m, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let res = await fetch(`${API}/${e.i}`, opts('PUT'));
+    if (res.status === 404) res = await fetch(API, opts('POST'));
     if (!res.ok) throw new Error(`Google Calendar: błąd ${res.status}`);
   }
-  return list.length;
+}
+
+/** Called at startup. Returns null when this is not a return from Google, else a result. */
+export async function handleGoogleReturn() {
+  const h = location.hash;
+  if (!/(^#|&)(access_token|error)=/.test(h.slice(1) ? '&' + h.slice(1) : '')) return null;
+  const p = new URLSearchParams(h.slice(1));
+  let st = {};
+  try { st = JSON.parse(unb64(p.get('state') || '')); } catch { /* ignore */ }
+  history.replaceState(null, '', location.pathname + (st.back || '#/home'));
+  if (p.get('error')) return { ok: false, msg: 'Google: ' + p.get('error') };
+  try {
+    await push(p.get('access_token'), st.e || []);
+    return { ok: true, msg: `Zsynchronizowano z Google Kalendarzem (${(st.e || []).length})` };
+  } catch (e) {
+    return { ok: false, msg: e.message };
+  }
 }
