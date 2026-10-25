@@ -5,7 +5,7 @@ import { esc, uid, todayStr, isDate, normalize, deepClone, fmtDate, readFileAsAr
 import { icon } from '../icons.js';
 import {
   state, getEvent, activeEvent, saveEvent, newEvent, normalizeEvent, normalizeRoom, normalizePerson,
-  eventDays, saveFile
+  eventDays, saveFile, deleteFile
 } from '../store.js';
 import { setHeader, toast, field, select, emptyState, confirmDialog } from '../ui.js';
 import { extractPdf } from '../pdf.js';
@@ -146,6 +146,7 @@ export function render({ el, params, query }) {
       startDate: dates[0] || S.defaultDate, endDate: dates[dates.length - 1] || S.defaultDate
     });
     const clean = rooms.map(r => normalizeRoom({ ...r, name: r.name.trim() || 'Sala', sessions: r.sessions }));
+    let orphanPlots = [];
     if (S.mode === 'replace') {
       const oldNames = Object.fromEntries(ev.rooms.map(r => [r.id, normalize(r.name)]));
       // keep the lighting cues / notes typed by hand for sessions that are still there
@@ -155,6 +156,7 @@ export function render({ el, params, query }) {
         const old = ev.rooms.find(x => normalize(x.name) === normalize(r.name));
         if (!old) continue;
         if (old.contacts?.length && !r.contacts.length) r.contacts = old.contacts;
+        if (old.plot && !r.plot) r.plot = old.plot;
         for (const s of r.sessions) {
           const o = old.sessions.find(x => x.date === s.date && x.start === s.start);
           if (!o) continue;
@@ -164,6 +166,8 @@ export function render({ el, params, query }) {
       }
       const lostCues = ev.rooms.reduce((n, r) => n + r.sessions.filter(x => x.cues).length, 0) - kept;
       if (lostCues > 0 && !(await confirmDialog(`Nowa agenda nie zawiera ${pl(lostCues, "sesji", "sesji", "sesji")} z wpisanymi cue – stracisz je. Zastąpić mimo to?`, { ok: 'Zastąp' }))) return;
+      const keptPlots = new Set(clean.map(r => r.plot?.fileId).filter(Boolean));
+      orphanPlots = ev.rooms.map(r => r.plot?.fileId).filter(id => id && !keptPlots.has(id));
       ev.rooms = clean;
       ev.crew.forEach(p => {
         const match = clean.find(r => normalize(r.name) === oldNames[p.roomId]);
@@ -186,6 +190,8 @@ export function render({ el, params, query }) {
     await attachFile(ev);
     const saved = normalizeEvent(ev);
     await saveEvent(saved);
+    // plots of rooms that disappeared with the old agenda
+    for (const id of orphanPlots) { try { await deleteFile(id); } catch { /* ignore */ } }
     S = null;
     toast(`Zapisano ${pl(clean.length, "salę", "sale", "sal")}`);
     location.hash = `#/event/${saved.id}?tab=rooms`;

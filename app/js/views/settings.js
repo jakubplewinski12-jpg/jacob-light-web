@@ -9,7 +9,7 @@ import { seedDemo } from '../seed.js';
 import { AI_MODEL } from '../ai.js';
 
 // filled in by deploy.ps1 (date + fingerprint of the app files)
-export const APP_VERSION = '2026.10.24-1915d956';
+export const APP_VERSION = '2026.10.25-9ec94ae4';
 
 export function render({ el, refresh }) {
   setHeader({ title: 'Ustawienia' });

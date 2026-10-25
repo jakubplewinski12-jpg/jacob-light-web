@@ -5,6 +5,7 @@ import { icon } from '../icons.js';
 import { getEvent, saveEvent, agendaDays, eventDays, normalizeSession, touchEvent } from '../store.js';
 import { setHeader, openSheet, confirmDialog, toast, field, input, textarea, select, row2, emptyState } from '../ui.js';
 import { roomStatus, roomSessionsOn, sortRoomSessions, sessEnd } from '../timeline.js';
+import { mountPlotSection, removeRoomPlotFile } from './room-plot.js';
 
 /* ---------- tab inside event ---------- */
 
@@ -188,13 +189,19 @@ export function renderRoom({ el, params, query }) {
     onAction: id => { if (id === 'edit') roomSheet(); }
   });
 
+  // the agenda part is redrawn every minute; the plot keeps its own container so its
+  // preview (a rendered PDF / .plot) is not rebuilt each time
+  el.innerHTML = '<div id="room-main"></div><div id="room-plot"></div>';
+  const main = el.querySelector('#room-main');
+  mountPlotSection(el.querySelector('#room-plot'), ev, room);
+
   const draw = () => {
     const now = new Date();
     const isToday = day === dateStr(now);
     const min = minutesOfDay(now);
     const list = roomSessionsOn(room, day);
     const people = [...ev.crew.filter(p => p.roomId === room.id), ...(room.contacts || [])];
-    el.innerHTML = `
+    main.innerHTML = `
       ${days.length > 1 ? `<div class="chips scroll-x">${days.map(d =>
         `<button class="chip ${d === day ? 'on' : ''} ${d === today ? 'today' : ''}" data-act="day" data-date="${d}">${esc(fmtDate(d, { weekday: true, short: true }))}</button>`).join('')}</div>` : ''}
       ${people.length ? `<button class="crew-strip plain" data-act="to-people">${icon('users')}<span class="grow">${people.map(p => esc(p.name.split(' ')[0])).join(', ')}</span>${icon('phone')}</button>` : ''}
@@ -226,6 +233,7 @@ export function renderRoom({ el, params, query }) {
           label: 'Usuń salę', kind: 'danger', onClick: async () => {
             const ok = await confirmDialog(`Usunąć salę „${room.name}” i ${pl(room.sessions.length, "sesję", "sesje", "sesji")}?`);
             if (!ok) return;
+            await removeRoomPlotFile(room);
             ev.rooms = ev.rooms.filter(r => r.id !== room.id);
             ev.crew.forEach(p => { if (p.roomId === room.id) p.roomId = ''; });
             await saveEvent(ev);

@@ -4,6 +4,7 @@
 import { esc, uid, fmtDT, telHref, initials, mapsHref } from '../util.js';
 import { icon } from '../icons.js';
 import { openSheet, field, input, textarea, select, peoplePicker, toast } from '../ui.js';
+import { openTripSheetDialog } from './trip-pdf.js';
 
 const nameOf = (d, id) => d.crew.find(p => p.id === id)?.name || '';
 const namesOf = (d, ids) => ids.map(id => nameOf(d, id)).filter(Boolean);
@@ -75,7 +76,10 @@ export function html(d, { mode = 'event' } = {}) {
       <a class="btn primary" href="#/crew/${esc(d.id)}">${icon('users')}Gdzie kto jest</a>
       <a class="btn" href="#/me/${esc(d.id)}">${icon('user')}Mój plan</a>
     </div>
-    <a class="btn block ghost" href="#/import/trip?event=${esc(d.id)}">${icon('route')}Importuj kartę wyjazdową</a>` : ''}
+    <div class="btn-grid">
+      <button class="btn" data-act="trip-pdf">${icon('download')}Karta PDF</button>
+      <a class="btn ghost" href="#/import/trip?event=${esc(d.id)}">${icon('route')}Importuj kartę</a>
+    </div>` : ''}
     ${section(`Ekipa (${d.crew.length})`, 'p-add', crew)}
     ${section('Godziny calli', 'c-add', calls)}
     ${section('Wyjazd i powrót', '', dep)}
@@ -215,6 +219,7 @@ export async function handle(act, t, ctx) {
   const tr = d.trip;
   const id = t.dataset.id;
   switch (act) {
+    case 'trip-pdf': openTripSheetDialog(d); return true;
     case 'p-add': personSheet(d, null, ctx.save); return true;
     case 'p-edit': personSheet(d, d.crew.find(p => p.id === id), ctx.save); return true;
     case 'v-add': vehicleSheet(d, null, ctx.save); return true;

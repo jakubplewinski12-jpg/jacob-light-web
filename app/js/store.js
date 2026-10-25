@@ -80,8 +80,14 @@ export function normalizeRoom(r = {}) {
   return {
     id: r.id || uid('r_'), name: str(r.name) || 'Sala', sessions: arr(r.sessions).map(normalizeSession),
     // people tied to this room only (venue tech, stage manager, client host…), separate from the crew
-    contacts: arr(r.contacts).map(c => ({ id: c.id || uid('k_'), name: str(c.name), role: str(c.role), phone: str(c.phone) }))
+    contacts: arr(r.contacts).map(c => ({ id: c.id || uid('k_'), name: str(c.name), role: str(c.role), phone: str(c.phone) })),
+    // stage plot of this room (file itself lives in IndexedDB "files", kind 'plot')
+    plot: normalizePlot(r.plot)
   };
+}
+export function normalizePlot(p) {
+  if (!p || !p.fileId) return null;
+  return { fileId: str(p.fileId), name: str(p.name) || 'plot', type: str(p.type), size: Number(p.size) || 0, addedAt: Number(p.addedAt) || Date.now() };
 }
 export function normalizePerson(p = {}) {
   return { id: p.id || uid('p_'), name: str(p.name), role: str(p.role), phone: str(p.phone), roomId: str(p.roomId), notes: str(p.notes) };
@@ -166,20 +172,27 @@ export async function deleteEvent(id) {
   const ev = getEvent(id);
   state.events = state.events.filter(e => e.id !== id);
   await db.del('events', id);
-  if (ev) for (const f of ev.files) { try { await db.del('files', f.id); } catch { /* ignore */ } }
+  // agenda/trip PDFs, room plots and anything else stored for this event
+  const ids = new Set(ev ? eventFileIds(ev) : []);
+  try { for (const f of (await db.byIndex('files', 'eventId', id)) || []) ids.add(f.id); } catch { /* ignore */ }
+  for (const fid of ids) { try { await db.del('files', fid); } catch { /* ignore */ } }
   if (settings.lastEventId === id) setSetting('lastEventId', '');
   emit();
 }
 
 /* ---------- stored files (PDF) ---------- */
 
-export async function saveFile(eventId, name, arrayBuffer, type = 'application/pdf') {
+export async function saveFile(eventId, name, arrayBuffer, type = 'application/pdf', kind = '') {
   const id = uid('f_');
-  await db.put('files', { id, eventId, name, type, size: arrayBuffer.byteLength, data: arrayBuffer, createdAt: Date.now() });
+  await db.put('files', { id, eventId, name, type, kind, size: arrayBuffer.byteLength, data: arrayBuffer, createdAt: Date.now() });
   return id;
 }
 export const getFile = id => db.get('files', id);
 export const deleteFile = id => db.del('files', id);
+/** Every stored file id referenced by the event (imported PDFs + room plots). */
+export function eventFileIds(ev) {
+  return [...ev.files.map(f => f.id), ...ev.rooms.map(r => r.plot?.fileId).filter(Boolean)];
+}
 
 /* ---------- queries ---------- */
 
@@ -305,7 +318,8 @@ export async function exportBackup(includeFiles = true) {
     exportedAt: new Date().toISOString(),
     settings: { me: settings.me },
     events: state.events,
-    files: files.map(f => ({ id: f.id, eventId: f.eventId, name: f.name, type: f.type, size: f.size, createdAt: f.createdAt, data: abToB64(f.data) }))
+    // every stored file (imported PDFs and room plots alike) travels with the backup
+    files: files.map(f => ({ id: f.id, eventId: f.eventId, name: f.name, type: f.type, kind: f.kind || '', size: f.size, createdAt: f.createdAt, data: abToB64(f.data) }))
   };
 }
 

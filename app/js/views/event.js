@@ -9,6 +9,7 @@ import { exportIcs, shareEvent } from '../export.js';
 import * as roomsTab from './event-rooms.js';
 import * as crewTab from './crew-trip.js';
 import * as listTab from './checklist.js';
+import { openTripSheetDialog } from './trip-pdf.js';
 
 const TABS = [['info', 'Info'], ['rooms', 'Sale'], ['crew', 'Ekipa'], ['list', 'Lista']];
 
@@ -69,6 +70,7 @@ function infoHtml(ev) {
   <div class="card list">
     <a class="list-row" href="#/import/agenda?event=${esc(ev.id)}">${icon('file')}<span class="grow">Importuj agendę (PDF / tekst)</span>${icon('chevronRight', 'chev')}</a>
     <a class="list-row" href="#/import/trip?event=${esc(ev.id)}">${icon('route')}<span class="grow">Importuj kartę wyjazdową</span>${icon('chevronRight', 'chev')}</a>
+    <button class="list-row plain" data-act="trip-pdf">${icon('download')}<span class="grow">Pobierz kartę wyjazdową (PDF)</span>${icon('chevronRight', 'chev')}</button>
     <button class="list-row plain" data-act="ics">${icon('calendar')}<span class="grow">Eksportuj do kalendarza (.ics)</span></button>
     <button class="list-row plain" data-act="share">${icon('share')}<span class="grow">Udostępnij podsumowanie</span></button>
     <a class="list-row" href="#/event/${esc(ev.id)}/edit">${icon('edit')}<span class="grow">Edytuj dane wydarzenia</span>${icon('chevronRight', 'chev')}</a>
@@ -161,6 +163,7 @@ export function render({ el, params, query }) {
       if (act === 'contact-edit') return contactSheet(ev, ev.contacts.find(c => c.id === t.dataset.id), ctx.save);
       if (act === 'file-open') return openFile(ev, t.dataset.id, ctx.save);
       if (act === 'share') return shareResult(await shareEvent(ev));
+      if (act === 'trip-pdf') return openTripSheetDialog(ev);
       if (act === 'ics') {
         const r = await exportIcs(ev);
         if (r === 'downloaded') toast('Plik .ics pobrany – otwórz go, by dodać do Kalendarza');
