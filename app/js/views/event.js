@@ -1,5 +1,6 @@
 // Event detail with tabs: Info, Sale, Ekipa (crew + trip), Lista (checklist).
 
+import { syncToGoogle } from '../gcal.js';
 import { esc, fmtRange, fmtDT, mapsHref, telHref, uid, money, grossOf } from '../util.js';
 import { icon } from '../icons.js';
 import { getEvent, saveEvent, deleteEvent, touchEvent, getFile, deleteFile } from '../store.js';
@@ -71,6 +72,7 @@ function infoHtml(ev) {
     <a class="list-row" href="#/import/agenda?event=${esc(ev.id)}">${icon('file')}<span class="grow">Importuj agendę (PDF / tekst)</span>${icon('chevronRight', 'chev')}</a>
     <a class="list-row" href="#/import/trip?event=${esc(ev.id)}">${icon('route')}<span class="grow">Importuj kartę wyjazdową</span>${icon('chevronRight', 'chev')}</a>
     <button class="list-row plain" data-act="trip-pdf">${icon('download')}<span class="grow">Pobierz kartę wyjazdową (PDF)</span>${icon('chevronRight', 'chev')}</button>
+    <button class="list-row plain" data-act="gcal">${icon('refresh')}<span class="grow">Synchronizuj z Google Kalendarzem</span></button>
     <button class="list-row plain" data-act="ics">${icon('calendar')}<span class="grow">Eksportuj do kalendarza (.ics)</span></button>
     <button class="list-row plain" data-act="share">${icon('share')}<span class="grow">Udostępnij podsumowanie</span></button>
     <a class="list-row" href="#/event/${esc(ev.id)}/edit">${icon('edit')}<span class="grow">Edytuj dane wydarzenia</span>${icon('chevronRight', 'chev')}</a>
@@ -164,6 +166,11 @@ export function render({ el, params, query }) {
       if (act === 'file-open') return openFile(ev, t.dataset.id, ctx.save);
       if (act === 'share') return shareResult(await shareEvent(ev));
       if (act === 'trip-pdf') return openTripSheetDialog(ev);
+      if (act === 'gcal') {
+        try { toast('Łączę z Google…'); const n = await syncToGoogle(ev); toast(`Zsynchronizowano z Google Kalendarzem (${n})`); }
+        catch (e) { toast(e.message, 'err'); }
+        return;
+      }
       if (act === 'ics') {
         const r = await exportIcs(ev);
         if (r === 'downloaded') toast('Plik .ics pobrany – otwórz go, by dodać do Kalendarza');
