@@ -1,0 +1,52 @@
+# Buduje natywną aplikację iOS (Capacitor) z folderu app/ jako niepodpisany plik .ipa.
+# Podpisanie i instalacja: Sideloadly na Windowsie z darmowym Apple ID (ważne 7 dni).
+name: iOS (.ipa)
+on:
+  workflow_dispatch:
+  push:
+    tags: ['ios-*']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Projekt Capacitor
+        run: |
+          mkdir native && cd native
+          npm init -y >/dev/null
+          npm i @capacitor/core@6.2.0 @capacitor/cli@6.2.0 @capacitor/ios@6.2.0
+          cp -R ../app www
+          cat > capacitor.config.json <<'EOF'
+          { "appId": "pl.jacoblight.eventcal", "appName": "Event Cal", "webDir": "www",
+            "ios": { "contentInset": "never", "backgroundColor": "#0A0A0A" } }
+          EOF
+          npx cap add ios
+          npx cap sync ios
+      - name: Ikona
+        run: |
+          cd native/ios/App/App/Assets.xcassets/AppIcon.appiconset
+          sips -z 1024 1024 ../../../../../www/icons/icon-512.png --out AppIcon-512@2x.png
+      - name: Build (bez podpisu)
+        run: |
+          cd native/ios/App
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -sdk iphoneos \
+            -archivePath "$PWD/build/App.xcarchive" archive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          mkdir -p Payload
+          cp -R build/App.xcarchive/Products/Applications/App.app Payload/
+          zip -qr "$GITHUB_WORKSPACE/EventCal.ipa" Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EventCal-ipa
+          path: EventCal.ipa
+      - name: Wydanie
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ios-$(date +%Y%m%d-%H%M)"
+          gh release create "$TAG" EventCal.ipa --title "Event Cal iOS $TAG" --notes "Zainstaluj przez Sideloadly (darmowe Apple ID, ważne 7 dni)."
