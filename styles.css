@@ -304,3 +304,5 @@ img.about-photo { padding: 0; }
   .contact-grid, .contact-form .row { grid-template-columns: 1fr; }
   .socials a { font-size: 16px; grid-template-columns: 24px 1fr auto; }
 }
+.about-photo img { width: 100%; height: 100%; object-fit: cover; object-position: 30% 60%; display: block; }
+.about-photo:has(img) { padding: 0; overflow: hidden; }
